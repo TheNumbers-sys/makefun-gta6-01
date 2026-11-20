@@ -1,0 +1,2 @@
+import {dist} from './config.js';
+export function pedestrianSystem(game,dt){if(!game.people.length)for(let i=0;i<18;i++)game.people.push({x:(i%6-2)*16+12,z:(Math.floor(i/6)-1)*16+11,phase:i*.8,hp:1,color:['#dc9475','#79b4a0','#d5bb75'][i%3]});for(const p of game.people){p.phase+=dt*(p.run?2:.35);p.x+=Math.sin(p.phase)*dt*.8;p.z+=Math.cos(p.phase*.7)*dt*.7;if(game.car&&Math.abs(game.car.speed)>9&&dist(p,game.car)<2){p.run=true;game.wanted=Math.min(5,game.wanted+1);game.bump=1.2}if(p.run&&dist(p,game.player)>18)p.run=false}}

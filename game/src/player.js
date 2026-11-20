@@ -1,0 +1,2 @@
+import {clamp} from './config.js';
+export function playerSystem(game,dt){const p=game.player,keys=game.keys;if(game.driving)return;let dx=(keys.d?1:0)-(keys.a?1:0),dz=(keys.s?1:0)-(keys.w?1:0),m=Math.hypot(dx,dz)||1;let speed=keys.shift?14:9;p.x=clamp(p.x+dx/m*speed*dt,-45,45);p.z=clamp(p.z+dz/m*speed*dt,-45,45);p.face=Math.atan2(dx,dz);if(keys[' ']&&p.y===0&&!p.jumpLock){p.vy=5.5;p.jumpLock=true}if(!keys[' '])p.jumpLock=false;p.y=Math.max(0,(p.y||0)+(p.vy||0)*dt);p.vy=(p.y>0?(p.vy||0)-16*dt:0);p.y=Math.max(0,p.y);}

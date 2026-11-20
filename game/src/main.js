@@ -1,134 +1,24 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { stageShot } from './shots.js';
-
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
-const MAX_FRAME = 0.25;
-
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
-
-const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
-const renderer = createRenderer(canvas);
-
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
-  }
-}
-
-function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
-}
-
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
-  function announce(message) {
-    status.textContent = message;
-  }
-
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
-    }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
-  }
-
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
-    }
-  }
-
-  function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
-    }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
-  }
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        step();
-        accumulator -= STEP;
-      }
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best);
-  }
-
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
-  });
-
-  announce('Block Dodger. Press Space or click to start.');
-  requestAnimationFrame(frame);
-}
-
-if (shot) runShot(shot);
-else runGame();
+import {makeCity} from './city.js';
+import {makeHud} from './hud.js';
+import {playerSystem} from './player.js';
+import {vehicleSystem} from './vehicles.js';
+import {pedestrianSystem} from './pedestrians.js';
+import {policeSystem} from './police.js';
+import {combatSystem} from './combat.js';
+import {missionSystem} from './missions.js';
+import {makeAudio} from './audio.js';
+import {loadGame,saveGame} from './save.js';
+const query=new URLSearchParams(location.search), shot=query.get('shot'),seed=Number(query.get('seed')||1);let rng=seed>>>0;const random=()=>((rng=(rng*1664525+1013904223)>>>0)/4294967296);
+const game={state:'menu',player:{x:-8,z:8,y:0,face:0},cars:[],car:null,driving:false,people:[],cops:[],pickups:[],enemies:[],keys:{},wanted:0,heatTimer:0,health:100,money:1250,ammo:18,done:0,missionFlash:0,bump:0,fireCooldown:0,visibleCop:true,cameraYaw:0,audio:makeAudio(),toast(s){hud.toast(s)},save(){saveGame(game)}};
+const saved=loadGame();if(saved){game.money=saved.money||1250;game.done=saved.done||0;game.player.x=saved.x||0;game.player.z=saved.z||0;game.health=saved.health||100}
+game.missions=missionSystem(game);const hud=makeHud(game);game.hud=hud;const city=makeCity(document.getElementById('scene'),game);
+const $=id=>document.getElementById(id);function begin(continueSave=false){game.audio.boot();game.audio.click();if(!continueSave){game.player.x=-8;game.player.z=8;game.money=1250;game.done=0;game.health=100;game.wanted=0;game.cars=[]}game.state='playing';$('title').classList.add('hidden');$('pause').classList.add('hidden')}
+$('start').onclick=()=>begin(false);$('continue').onclick=()=>begin(true);$('resume').onclick=()=>{game.state='playing';$('pause').classList.add('hidden')};$('save').onclick=()=>{game.save();game.toast('GAME SAVED');game.audio.click()};
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();game.keys[k]=true;if(k==='escape'||k==='p'){if(game.state==='playing'){game.state='paused';$('pause').classList.remove('hidden')}else if(game.state==='paused'){$('pause').classList.add('hidden');game.state='playing'}}if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault()});addEventListener('keyup',e=>game.keys[e.key.toLowerCase()]=false);addEventListener('blur',()=>game.keys={});
+addEventListener('mousemove',e=>{if(document.pointerLockElement)game.cameraYaw+=e.movementX*.002});$('scene').addEventListener('click',()=>{if(game.state==='playing'&&!game.driving&&game.ammo>0){game.keys.g=true;setTimeout(()=>game.keys.g=false,30);document.body.requestPointerLock?.()}});
+// Deterministic showcase states are applied before the first rendered frame.
+function stage(){game.state='playing';$('title').classList.add('hidden');if(shot==='play'||shot==='chase'){game.player.x=24;game.player.z=8;game.wanted=shot==='play'?3:4;game.cops=[{x:12,z:8,angle:0},{x:16,z:0,angle:0},{x:5,z:8,foot:true}];game.car=game.cars[0];game.car.x=24;game.car.z=8;game.car.speed=shot==='chase'?25:17;game.car.angle=Math.PI/2;game.cameraYaw=Math.PI/2;game.driving=true;game.player.x=game.car.x;game.player.z=game.car.z}else if(shot==='mission'){game.player.x=-24;game.player.z=8;game.done=1;game.missionFlash=2;hud.complete('THE PICKUP',350);$('missionpop').classList.remove('hidden')} }
+// Seed the vehicle roster before showcase positioning so every query renders identically.
+vehicleSystem(game,0);
+if(shot&&shot!=='start')stage();
+let previous=performance.now();function frame(now){const dt=Math.min(.04,(now-previous)/1000);previous=now;if(game.state==='playing'&&!shot){game.visibleCop=game.cops.some(c=>Math.hypot(c.x-game.player.x,c.z-game.player.z)<29);playerSystem(game,dt);vehicleSystem(game,dt);pedestrianSystem(game,dt);policeSystem(game,dt);combatSystem(game,dt);game.missions.update();game.bump=Math.max(0,game.bump-dt);game.missionFlash=Math.max(0,game.missionFlash-dt)}city.draw();hud.update();requestAnimationFrame(frame)}requestAnimationFrame(frame);
